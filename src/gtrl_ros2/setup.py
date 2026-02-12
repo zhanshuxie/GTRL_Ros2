@@ -31,11 +31,11 @@ setup(
         # 拷贝 world
         (os.path.join('share', package_name, 'world'), glob('world/*')),
         # 拷贝 rviz
-        (os.path.join('share', package_name, 'rviz'), glob('rviz/*')),
+        (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
 
         # 拷贝 meshes
         (os.path.join('share', package_name, 'meshes'), glob('meshes/*.dae')),
-        (os.path.join('share', package_name, 'meshes/laser'), glob('rviz/laser/*')),
+        (os.path.join('share', package_name, 'meshes/laser'), glob('meshes/laser/*')),
 
     ],
     install_requires=['setuptools'],

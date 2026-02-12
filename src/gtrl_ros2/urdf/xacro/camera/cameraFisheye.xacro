@@ -46,9 +46,11 @@
   </joint>
 
   <gazebo reference="${name}">
-    <sensor type="wideanglecamera" name="camera2">
+    <sensor type="wideanglecamera" name="fisheye_sensor">
+      <always_on>true</always_on>
+      <visualize>true</visualize>
       <update_rate>30.0</update_rate>
-      <camera name="head">
+      <camera name="fisheye">
         <horizontal_fov>3.84</horizontal_fov>
         <image>
           <width>640</width>
@@ -68,6 +70,7 @@
           <custom_function>
           <c1>3</c1>   <!-- linear scaling -->
           <c2>8</c2>      <!-- angle scaling -->
+          <c3>0</c3>
           <f>1.0</f>      <!-- one more scaling parameter -->
           <fun>tan</fun>  <!-- one of sin,tan,id -->
           </custom_function>

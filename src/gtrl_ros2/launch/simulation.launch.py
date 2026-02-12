@@ -15,7 +15,7 @@ def generate_launch_description():
     # 2. 定义文件路径
     # 注意：这里对应你 urdf 文件夹下的结构
     xacro_file = os.path.join(pkg_gtrl, 'urdf', 'xacro', 'bringup', 'bringup_scout.xacro')
-    world_file = os.path.join(pkg_gtrl, 'worlds', 'RRC1.world') # 确保你有这个world文件
+    world_file = os.path.join(pkg_gtrl, 'world', 'RRC1.world') # 确保你有这个world文件
     rviz_config = os.path.join(pkg_gtrl, 'rviz', 'scout_ros2.rviz')   # 确保你有这个rviz文件
 
     # 3. 声明参数
@@ -38,7 +38,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg_gazebo_ros, 'launch', 'gazebo.launch.py')
         ),
-        launch_arguments={'world': world_file, 'gui': 'false'}.items(),
+        launch_arguments={'world': world_file}.items(),
     )
 
     # (B) 发布机器人状态 (Robot State Publisher)
@@ -50,14 +50,14 @@ def generate_launch_description():
         parameters=[robot_description, {'use_sim_time': use_sim_time}]
     )
 
-    # # (C) 关节状态发布 (Joint State Publisher)
-    # # 如果 Gazebo 插件没有正确发布 joint_states，这个节点可以作为补充
-    # node_joint_state_publisher = Node(
-    #     package='joint_state_publisher',
-    #     executable='joint_state_publisher',
-    #     output='screen',
-    #     parameters=[{'use_sim_time': use_sim_time}]
-    # )
+    # (C) 关节状态发布 (Joint State Publisher)
+    # 如果 Gazebo 插件没有正确发布 joint_states，这个节点可以作为补充
+    node_joint_state_publisher = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
 
     # (D) 在 Gazebo 中生成机器人 (Spawn Entity)
     spawn_entity = Node(
@@ -96,7 +96,13 @@ def generate_launch_description():
             period=3.0, 
             actions=[node_robot_state_publisher]
         ),
-        
+
+        # 3. 延迟 3秒 启动 Joint State Publisher (作为 TF 保底)
+        TimerAction(
+            period=3.0,
+            actions=[node_joint_state_publisher]
+        ),
+
         # 3. 延迟 3秒 后生成机器人 (Spawn)
         TimerAction(
             period=3.0, 

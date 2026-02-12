@@ -46,9 +46,9 @@
   </joint> 
 
   <gazebo reference="${name}">
-    <sensor type="depth" name="camera2">
+    <sensor type="depth" name="depth_sensor">
       <update_rate>10.0</update_rate>
-      <camera name="head">
+      <camera name="depth">
         <horizontal_fov>1.047198</horizontal_fov>
         <image>
           <width>640</width>
@@ -73,7 +73,7 @@
             <namespace>camera/depth</namespace>
 
           </ros>
-          <camera_name>camera_ir</camera_name>
+          <camera_name>camera_depth</camera_name>
           <frame_name>depth_frame</frame_name>
           <hack_baseline>0.0</hack_baseline>
           
