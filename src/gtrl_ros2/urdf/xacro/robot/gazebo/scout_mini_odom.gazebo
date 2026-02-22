@@ -4,8 +4,8 @@
         <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
             <ros>
                 <namespace>/</namespace>
-                <remapping>cmd_vel:=cmd_vel</remapping>
-                <remapping>odom:=odom</remapping>
+                <remapping>cmd_vel:=/scout/cmd_vel</remapping>
+                <remapping>odom:=/scout/odom</remapping>
             </ros>
 
             <update_rate>50</update_rate>
@@ -23,7 +23,7 @@
             <max_wheel_torque>20</max_wheel_torque>
             <max_wheel_acceleration>1.0</max_wheel_acceleration>
 
-            <command_topic>cmd_vel</command_topic>
+            <command_topic>/scout/cmd_vel</command_topic>
             <publish_odom>true</publish_odom>
             <publish_odom_tf>true</publish_odom_tf>
             <publish_wheel_tf>true</publish_wheel_tf>
