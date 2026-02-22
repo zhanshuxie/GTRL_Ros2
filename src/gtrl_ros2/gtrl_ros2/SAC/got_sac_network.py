@@ -131,15 +131,25 @@ class QNetwork(nn.Module):
     def __init__(self, nb_actions, nb_pstate):
         super(QNetwork, self).__init__()
 
-        self.conv1 = nn.Conv2d(4,16,5, stride=2)
-        self.conv2 = nn.Conv2d(16,64,5, stride=2)
-        self.conv3 = nn.Conv2d(64,256,5, stride=2)
+        # 图像 istate
+        # in_channels, out_channels, kernel_size
+        self.conv1 = nn.Conv2d(4,16,5, stride=2)  # 卷积
+        """
+        (128 - 5) / 2 + 1 = 61.5 + 1 = 61 + 1 = 62
+        (160 - 5) / 2 + 1 = 77.5 + 1 = 77 + 1 = 78
+        (b, 16, 62, 78)
+        """
+        self.conv2 = nn.Conv2d(16,64,5, stride=2)  # (b, 64, 29, 37)
+
+        self.conv3 = nn.Conv2d(64,256,5, stride=2)  # (b, 256, 13, 17)
         
         self.avg = nn.AdaptiveAvgPool2d(output_size=(1,1))
+
         self.fc1 = nn.Linear(256+32+nb_actions,128)
         self.fc2 = nn.Linear(128,32)
         self.fc3 = nn.Linear(32,nb_actions)
         
+        # toGoal过fc_embed
         self.fc_embed = nn.Linear(nb_pstate, 32)
         
         self.fc11 = nn.Linear(256+32+nb_actions,128)
@@ -155,18 +165,20 @@ class QNetwork(nn.Module):
         x1 = F.relu(self.conv1(x1))
         x1 = F.relu(self.conv2(x1))
         x1 = F.relu(self.conv3(x1))
-        x1 = self.avg(x1)
-        x1 = x1.view(x1.size(0), -1)
+        x1 = self.avg(x1)  # x1:(1, 256, 1, 1)
+        x1 = x1.view(x1.size(0), -1)  # x1:(1, 256)
         
         x2 = pstate
         x2 = F.relu(self.fc_embed(x2))
         
         x = torch.cat([x1, x2, a], dim=1)
         
+        # q1
         q1 = F.relu(self.fc1(x))
         q1 = F.relu(self.fc2(q1))
         q1 = self.fc3(q1)
 
+        # q2
         q2 = F.relu(self.fc11(x))
         q2 = F.relu(self.fc21(q2))
         q2 = self.fc31(q2)
@@ -185,7 +197,7 @@ class GoTPolicy(nn.Module):
             depth = block,
             heads = head,
             mlp_dim = 2048,
-            channels = 4
+            channels = 4  # 堆叠4帧图片
         )
         
         self.fc_embed = nn.Linear(nb_pstate, 32)
@@ -213,8 +225,9 @@ class GoTPolicy(nn.Module):
         x1 = istate
 
         x2 = pstate
-        x2 = self.fc_embed(x2)
+        x2 = self.fc_embed(x2)  # dim:2->32
 
+        # 进入GoT
         latent_features = self.trans.forward(x1, x2)
         
         x = F.relu(self.fc1(latent_features))
@@ -230,8 +243,8 @@ class GoTPolicy(nn.Module):
         std = log_std.exp()
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
-        y_t = torch.tanh(x_t)
-        action = y_t * self.action_scale + self.action_bias
+        y_t = torch.tanh(x_t)  # 动作限幅
+        action = y_t * self.action_scale + self.action_bias  # self.action_scale 幅值 self.action_bias 均值
         log_prob = normal.log_prob(x_t)
         # Enforcing Action Bound
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)

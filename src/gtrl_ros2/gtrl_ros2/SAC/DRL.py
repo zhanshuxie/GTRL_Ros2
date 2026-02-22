@@ -42,11 +42,11 @@ class SAC(object):
         self.tau = TAU
         self.alpha = ALPHA
 
-        self.pstate_dim = pstate_dim
+        self.pstate_dim = pstate_dim  # physical_state_dim
         self.action_dim = action_dim
         
         self.itera = 0
-        self.guidence_weight = 1.0
+        self.guidance_weight = 1.0
         self.engage_weight = 1.0
         self.buffer_size_expert = 5e3
         self.batch_expert = 0
@@ -71,13 +71,13 @@ class SAC(object):
         set_seed(self.seed)
 
         self.replay_buffer = PrioritizedReplayBuffer(BUFFER_SIZE,
-                                          {"obs": {"shape": (128,160,4)},
-                                           "act": {"shape":action_dim},
-                                           "pobs": {"shape":pstate_dim},
-                                           "next_pobs": {"shape":pstate_dim},
+                                          {"obs": {"shape": (128,160,4)},  # 图像(H, W, C)
+                                           "act": {"shape":action_dim},  # 动作(线速度 角速度)
+                                           "pobs": {"shape":pstate_dim},  # last_goal 前两维
+                                           "next_pobs": {"shape":pstate_dim},  # goal 前两维
                                            "rew": {},
                                            "next_obs": {"shape": (128,160,4)},
-                                           "engage": {},
+                                           "engage": {},  # 是否人工干预
                                            "done": {}},
                                           next_of=("obs"))
 
@@ -91,6 +91,14 @@ class SAC(object):
                                                                  "next_obs": {"shape": (128,160,4)},
                                                                  "done": {}},
                                                                 next_of=("obs"))
+
+        """ config.yaml
+        GoT-SAC
+        actor_type : "GaussianTransformer"
+        block:2
+        head:4
+        critic_type : "CNN
+        """
 
         ################# Initialize Critic Network ##############
         if self.critic_type == "Transformer":
@@ -161,6 +169,7 @@ class SAC(object):
 
     def choose_action(self, istate, pstate, evaluate=False):
         if istate.ndim < 4:
+            # (1, H, W, C) -> (1, C, H, W)
             istate = torch.FloatTensor(istate).float().unsqueeze(0).permute(0,3,1,2).to(self.device)
             pstate = torch.FloatTensor(pstate).float().unsqueeze(0).to(self.device)
         else:
@@ -168,16 +177,18 @@ class SAC(object):
             pstate = torch.FloatTensor(pstate).float().to(self.device)
         
         if evaluate is False:
+            # 带随机性
             action, _, _ = self.policy.sample([istate, pstate])
         else:
+            # 取mean动作
             _, _, action = self.policy.sample([istate, pstate])
         return action.detach().squeeze(0).cpu().numpy()
 
-    def learn_guidence(self, engage, batch_size=64):
+    def learn_guidance(self, human_guidance, batch_size=64):
 
         agent_buffer_size = self.replay_buffer.get_stored_size()
 
-        if self.pre_buffer:
+        if self.pre_buffer:  # pre_buffer = True
             exp_buffer_size = self.replay_buffer_expert.get_stored_size()
             scale_factor = 1
             
@@ -185,7 +196,7 @@ class SAC(object):
 
             batch_agent = batch_size
         
-        if self.batch_expert > 0:
+        if self.batch_expert > 0:  # pre_buffer = True
             expert_flag = True
             data_agent = self.replay_buffer.sample(batch_agent)
             data_expert = self.replay_buffer_expert.sample(self.batch_expert)
@@ -208,13 +219,13 @@ class SAC(object):
             next_pstates = np.concatenate([next_pstates_agent, next_pstates_expert], axis=0)
             dones = np.concatenate([dones_agent, dones_expert], axis=0)
 
-        else:
+        else:  # pre_buffer = False
             expert_flag = False
             data = self.replay_buffer.sample(batch_size)
             istates, pstates, actions, engages = data['obs'], data['pobs'], data['act'], data['engage']
             rewards, next_istates, next_pstates, dones = data['rew'], data['next_obs'], data['next_pobs'], data['done']
             
-        istates = torch.FloatTensor(istates).permute(0,3,1,2).to(self.device)
+        istates = torch.FloatTensor(istates).permute(0,3,1,2).to(self.device)  # reshape
         pstates = torch.FloatTensor(pstates).to(self.device)
         actions = torch.FloatTensor(actions).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
@@ -228,7 +239,8 @@ class SAC(object):
             qf1_next_target, qf2_next_target = self.critic_target([next_istates, next_pstates, next_state_actions])
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = rewards + self.gamma * (min_qf_next_target)
-            
+        
+        # 更新 Q 网络
         qf1, qf2 = self.critic([istates, pstates, actions])  
         qf1_loss = F.mse_loss(qf1, next_q_value)
         qf2_loss = F.mse_loss(qf2, next_q_value)
@@ -238,33 +250,38 @@ class SAC(object):
         qf_loss.backward()
         self.critic_optim.step()
         
+        # 更新 actor 网络
         pi, log_pi, _ = self.policy.sample([istates, pstates])
 
         qf1_pi, qf2_pi = self.critic([istates, pstates, pi])
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
-        ##### Pre buffer (expert) guidence loss, Optional #####
-        if expert_flag:
+        ##### Pre buffer (expert) guidance loss, Optional #####
+        if expert_flag:  # pre_buffer = True
             istates_expert = torch.FloatTensor(istates_expert).permute(0,3,1,2).to(self.device)
             pstates_expert = torch.FloatTensor(pstates_expert).to(self.device)
             actions_expert = torch.FloatTensor(actions_expert).to(self.device)
             _, _, predicted_actions = self.policy.sample([istates_expert, pstates_expert]) 
-            guidence_loss = self.guidence_weight * F.mse_loss(predicted_actions, actions_expert).mean()
+            guidance_loss = self.guidance_weight * F.mse_loss(predicted_actions, actions_expert).mean()
         else:
-            guidence_loss = 0.0
+            guidance_loss = 0.0
 
         ##### Real-time engage loss, Optional ######
-        engage_index = (engages == 1).nonzero(as_tuple=True)[0]
-        if engage_index.numel() > 0:
-            istates_expert = istates[engage_index]
-            pstates_expert = pstates[engage_index]
-            actions_expert = actions[engage_index]
-            _, _, predicted_actions = self.policy.sample([istates_expert, pstates_expert]) 
-            engage_loss = self.engage_weight * F.mse_loss(predicted_actions, actions_expert).mean()
+        # engage_loss
+        if human_guidance:  # human_guidance = True
+            engage_index = (engages == 1).nonzero(as_tuple=True)[0]
+            if engage_index.numel() > 0:
+                istates_expert = istates[engage_index]
+                pstates_expert = pstates[engage_index]
+                actions_expert = actions[engage_index]
+                _, _, predicted_actions = self.policy.sample([istates_expert, pstates_expert]) 
+                engage_loss = self.engage_weight * F.mse_loss(predicted_actions, actions_expert).mean()
+            else:
+                engage_loss = 0.0
         else:
             engage_loss = 0.0
 
-        policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() + guidence_loss + engage_loss
+        policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() + guidance_loss + engage_loss
 
         self.policy_optim.zero_grad()
         policy_loss.backward()
@@ -306,7 +323,7 @@ class SAC(object):
         istates, pstates, actions = data['obs'], data['pobs'], data['act']
         rewards, next_istates, next_pstates, dones = data['rew'], data['next_obs'], data['next_pobs'], data['done']
 
-        istates = torch.FloatTensor(istates).permute(0,3,1,2).to(self.device)
+        istates = torch.FloatTensor(istates).permute(0,3,1,2).to(self.device) # -> (b, C, H, W)
         pstates = torch.FloatTensor(pstates).to(self.device)
         actions = torch.FloatTensor(actions).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
@@ -318,8 +335,9 @@ class SAC(object):
             next_state_actions, next_state_log_pi, _ = self.policy.sample([next_istates, next_pstates])
             qf1_next_target, qf2_next_target = self.critic_target([next_istates, next_pstates, next_state_actions])
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
-            next_q_value = rewards + self.gamma * (min_qf_next_target)
-            
+            next_q_value = rewards + self.gamma * (min_qf_next_target)  # TD_target
+
+        # 更新 Q 网络    
         qf1, qf2 = self.critic([istates, pstates, actions])
         qf1_loss = F.mse_loss(qf1, next_q_value)
         qf2_loss = F.mse_loss(qf2, next_q_value)
@@ -329,6 +347,7 @@ class SAC(object):
         qf_loss.backward()
         self.critic_optim.step()
         
+        # 更新 actor 网络
         pi, log_pi, _ = self.policy.sample([istates, pstates])
 
         qf1_pi, qf2_pi = self.critic([istates, pstates, pi])
@@ -341,6 +360,7 @@ class SAC(object):
         self.policy_optim.step()
 
         ##### Automatic Entropy Adjustment #####
+        # 更新熵温度alpha(auto_tune=true)
         if self.automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
 
@@ -354,7 +374,7 @@ class SAC(object):
             alpha_loss = torch.tensor(0.).to(self.device)
             alpha_tlogs = torch.tensor(self.alpha) # For TensorboardX logs
 
-
+        # 软更新target_critic
         if self.itera % self.policy_freq == 0:
             soft_update(self.critic_target, self.critic, self.tau)
         
@@ -380,6 +400,8 @@ class SAC(object):
                                done=d)
 
     def store_transition(self, s, a, ps, ps_, r, s_, engage, a_exp, d=0):
+        # 判断是否intervention, 即 engage
+        # intervention 与 learn_guidance 的入口开关无关，但与 learn_guidance 内部的 engage_loss 直接相关。
         if a is not None:
             self.replay_buffer.add(obs=s,
                     act=a,

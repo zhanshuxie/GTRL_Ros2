@@ -182,9 +182,12 @@ class GazeboEnv:
         
         self.velodyne = self.node.create_subscription(PointCloud2, '/velodyne_points', self.velodyne_callback, 1)
         self.laser = self.node.create_subscription(LaserScan, '/front_laser/scan', self.laser_callback, 1)
-        self.odom = self.node.create_subscription(Odometry, '/scout/odom', self.odom_callback, 1)
+        # self.odom进行了修改
+        self.odom = self.node.create_subscription(Odometry, '/odom', self.odom_callback, 1)
+        # self.image是否需要修改???
         self.image = self.node.create_subscription(Image, '/camera/rgb/image_raw', self.image_callback, 1)
-        self.image_fish = self.node.create_subscription(Image, '/camera/fisheye/image_raw', self.image_fish_callback, 1)
+        # self.image_fish进行修改
+        self.image_fish = self.node.create_subscription(Image, '/camera/fisheye/camera_fish/image_raw', self.image_fish_callback, 1)
 
     def seed(self, seed):
         random.seed(seed)
@@ -192,10 +195,12 @@ class GazeboEnv:
     
     # [ROS 2 新增] 同步调用服务的辅助函数
     def _call_service_sync(self, client, request):
+        # 判断服务是否上线
         while not client.wait_for_service(timeout_sec=1.0):
             self.node.get_logger().info('service not available, waiting again...')
-        
+        # 发送requst
         future = client.call_async(request)
+        # spin等待服务处理完成
         rclpy.spin_until_future_complete(self.node, future)
         return future.result()
 
@@ -226,7 +231,9 @@ class GazeboEnv:
                         break
 
     def laser_callback(self, scan):
+        # 接收数据
         self.last_laser = scan
+        # 标志位
         self.new_laser = True
 
     def odom_callback(self, od_data):
@@ -242,8 +249,11 @@ class GazeboEnv:
         self.new_image = True
 
     def image_fish_callback(self, rgb_data):
+        # 灰度
         image = self.br.imgmsg_to_cv2(rgb_data, "mono8")
+        # 彩色
         self.original_image = self.br.imgmsg_to_cv2(rgb_data, "rgb8")
+        # 剪裁/缩放
         self.last_image_fish = np.expand_dims(cv2.resize(image[80:400, 140:500], (160, 128)), axis=2)
         image_ = self.br.imgmsg_to_cv2(rgb_data, "rgb8")
         self.rgb_image = image_[80:400, 140:500, :]
@@ -274,6 +284,7 @@ class GazeboEnv:
         target = False
         
         # [ROS 2 修改] 服务调用
+        # 让Gazebo从暂停状态继续计算,否则发布了速度,世界不动,传感器也不刷新
         self._call_service_sync(self.unpause, Empty.Request())
 
         time.sleep(0.1)
@@ -298,9 +309,10 @@ class GazeboEnv:
                 break
 
         time.sleep(0.1)
-        
+        # 让Gazebo暂停
         self._call_service_sync(self.pause, Empty.Request())
 
+        # 读取本步数据
         data = self.last_laser
         dataOdom = self.last_odom
         data_obs = self.last_image
@@ -321,6 +333,7 @@ class GazeboEnv:
         done, col, min_laser = self.calculate_observation(data)
 
         # Calculate robot heading from odometry data
+        # 更新机器人位姿odomX/odomY
         self.odomX = dataOdom.pose.pose.position.x
         self.odomY = dataOdom.pose.pose.position.y
         
@@ -336,6 +349,7 @@ class GazeboEnv:
         angle = round(euler[2], 4)
 
         # Calculate distance to the goal from the robot
+        # 计算相对距离
         Dist = math.sqrt(math.pow(self.odomX - self.goalX, 2) + math.pow(self.odomY - self.goalY, 2))
 
         # Calculate the angle distance between the robots heading and heading toward the goal
@@ -346,6 +360,7 @@ class GazeboEnv:
         mag2 = math.sqrt(math.pow(1, 2) + math.pow(0, 2))
         
         # Fix domain error for acos
+        # beta2 航向误差
         val = dot / (mag1 * mag2)
         val = max(min(val, 1.0), -1.0)
         beta = math.acos(val)
@@ -365,10 +380,11 @@ class GazeboEnv:
             beta2 = np.pi - beta2
 
         # Publish visual data in Rviz
+        # 目标点可视化
         markerArray = MarkerArray()
         marker = Marker()
         marker.header.frame_id = "odom"
-        marker.type = marker.CYLINDER
+        marker.type = marker.CYLINDER  # 圆柱体 
         marker.action = marker.ADD
         marker.scale.x = 0.3
         marker.scale.y = 0.3
@@ -378,14 +394,15 @@ class GazeboEnv:
         marker.color.g = 1.0
         marker.color.b = 1.0
         marker.pose.orientation.w = 1.0
-        marker.pose.position.x = self.goalX
-        marker.pose.position.y = self.goalY
+        marker.pose.position.x = self.goalX  # 位置X
+        marker.pose.position.y = self.goalY  # 位置Y
         marker.pose.position.z = 0
 
         markerArray.markers.append(marker)
 
         self.publisher.publish(markerArray)
 
+        # 线速度动作强度条
         markerArray2 = MarkerArray()
         marker2 = Marker()
         marker2.header.frame_id = "odom"
@@ -405,7 +422,8 @@ class GazeboEnv:
 
         markerArray2.markers.append(marker2)
         self.publisher2.publish(markerArray2)
-
+        
+        # 角速度动作强度条
         markerArray3 = MarkerArray()
         marker3 = Marker()
         marker3.header.frame_id = "odom"
@@ -425,7 +443,8 @@ class GazeboEnv:
 
         markerArray3.markers.append(marker3)
         self.publisher3.publish(markerArray3)
-
+        
+        # 参考小方块(基准)
         markerArray4 = MarkerArray()
         marker4 = Marker()
         marker4.header.frame_id = "odom"
@@ -448,10 +467,14 @@ class GazeboEnv:
 
         '''Bunch of different ways to generate the reward'''
         
+        # 向目标点接近就满分
         r_heuristic = (self.distOld - Dist) * 20 #* math.cos(act[0]*act[1]/4)
+        # 鼓励前进,抑制过大的角速度
         r_action = act[0]*2 - abs(act[1])
-        r_smooth = - abs(act[1] - self.last_act)/4
-              
+        # 抑制突变转向
+        r_smooth = - abs(act[1] - self.last_act)/4  # 惩罚角速度突变(论文中没有)
+
+        # 供下一step计算奖励使用      
         self.distOld = Dist
 
         r_target = 0.0
@@ -474,6 +497,7 @@ class GazeboEnv:
             r_freeze = -1
 
         reward = r_heuristic + r_action + r_collision + r_target + r_smooth #+ r_freeze
+        # Dist [0, 1] beta2 [-1, 1]
         Dist  = min(Dist/15, 1.0) #max 15m away from current position
         beta2 = beta2 / np.pi
         toGoal = np.array([Dist, beta2, act[0], act[1]])
@@ -484,8 +508,8 @@ class GazeboEnv:
         # state = image/10
         
         ######## FishEye ####
-        state = data_obs_fish / 255
-        self.last_act = act[1]
+        state = data_obs_fish / 255 # 原始图片每一个像素值是0～255的整数，归一化
+        self.last_act = act[1]  # 计算 角速度突变的惩罚
         return state, r_heuristic, r_action, r_freeze, r_collision, r_target, reward, done, toGoal, target
 
     def check_list(self, buffer):
@@ -497,20 +521,27 @@ class GazeboEnv:
         return all((abs(first-x)<0.1) for x in buffer)
 
     def reset(self):
+        # 每回合开始把环境重置成一个新的初始状态
+        # 随机起点 + 随机目标 + 首帧采样
 
         # Resets the state of the environment and returns an initial observation.
         self._call_service_sync(self.reset_proxy, Empty.Request())
 
+        # 随机朝向
+        # 先随机一个yaw角
         angle = np.random.uniform(-np.pi, np.pi)
+        # 再转成四元数
         quaternion = Quaternion.from_euler(0., 0., angle)
         object_state = self.set_self_state
 
+        # 随机位置
         x = 0
         y = 0
         chk = False
         while not chk:
             x = np.random.uniform(-7.0, 7.0)
             y = np.random.uniform(-4.0, 4.0)
+            # 判断是否可行
             chk = check_pos(x, y)
         object_state.pose.position.x = x
         object_state.pose.position.y = y
@@ -518,19 +549,23 @@ class GazeboEnv:
         object_state.pose.orientation.y = quaternion.y
         object_state.pose.orientation.z = quaternion.z
         object_state.pose.orientation.w = quaternion.w
+        # 通过 gazebo/set_model_state 发布
         self.set_state.publish(object_state)
 
         self.odomX = object_state.pose.position.x
         self.odomY = object_state.pose.position.y
 
+        # 生成新目标点
         self.change_goal()
         # self.random_box()
+        # 供下一个step奖励计算使用
         self.distOld = math.sqrt(math.pow(self.odomX - self.goalX, 2) + math.pow(self.odomY - self.goalY, 2))
 
         data = None
         data_obs = None
         data_obs_fish = None
         
+        # 让Gazebo从暂停状态继续计算,否则发布了速度,世界不动,传感器也不刷新
         self._call_service_sync(self.unpause, Empty.Request())
         
         # [ROS 2 修改] 等待激光雷达数据
@@ -558,9 +593,15 @@ class GazeboEnv:
         
         ##### FishEye Image ####
         camera_image = data_obs_fish
+        # 转灰度图 mono8
         image = self.br.imgmsg_to_cv2(camera_image, "mono8")
+        # 裁剪[80:400, 140:500]
+        # resize到(160, 128)
+        # 增加channel维
         image = np.expand_dims(cv2.resize(image[80:400, 140:500], (160, 128)), axis=2)
+        # 归一化 shape(128, 160, 1) (HWC)
         state = image/255
+        
 
         ######## Depth Image ##########
         # image = self.br.imgmsg_to_cv2(camera_image, "passthrough")
@@ -569,8 +610,9 @@ class GazeboEnv:
         # image = np.expand_dims(cv2.resize(image, (128, 64)), axis=2)
         # state = image/10
 
+        # 让Gazebo暂停
         self._call_service_sync(self.pause, Empty.Request())
-
+        # 相对距离
         Dist = math.sqrt(math.pow(self.odomX - self.goalX, 2) + math.pow(self.odomY - self.goalY, 2))
 
         skewX = self.goalX - self.odomX
@@ -583,7 +625,7 @@ class GazeboEnv:
         val = dot / (mag1 * mag2)
         val = max(min(val, 1.0), -1.0)
         beta = math.acos(val)
-
+        # 航向误差
         if skewY < 0:
             if skewX < 0:
                 beta = -beta
@@ -598,9 +640,10 @@ class GazeboEnv:
             beta2 = -np.pi - beta2
             beta2 = np.pi - beta2
 
+        # Dist [0, 1] beta2 [-1, 1]
         Dist  = min(Dist/15, 1.0) # max 15m away from current position
         beta2 = beta2 / np.pi
-        toGoal = np.array([Dist, beta2, 0.0, 0.0])
+        toGoal = np.array([Dist, beta2, 0.0, 0.0])  # 初始化时没有动作 动作置0
         return state, toGoal
 
     # Place a new goal and check if its lov\cation is not on one of the obstacles

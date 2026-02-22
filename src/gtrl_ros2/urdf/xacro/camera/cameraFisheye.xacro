@@ -4,6 +4,8 @@
 <!-- Camera -->
 <xacro:macro name="camF" params="name parent xyz rpy">
 
+  <!--有哪些零件(link) 零件之间怎么连接(joint)-->
+  <!--把相机主体固定到机器人-->
   <joint name="${parent}_${name}_joint" type="fixed">
       <!-- <axis xyz="0 0 1" /> -->
       <axis xyz="0.19 0 0.5" />
@@ -13,6 +15,7 @@
   </joint>
 
   <!-- Camera -->
+  <!--相机的link(主体)-->
   <link name="${name}">
     <inertial>
       <mass value="1e-5" />
@@ -37,6 +40,7 @@
     <material value="Gazebo/Grey"/>
   </gazebo>
 
+  <!--给相机一个光学坐标 使z轴朝向镜头前方-->
   <link name="fisheye_frame"/>
 
   <joint name="fisheye_joint" type="fixed">
@@ -45,11 +49,13 @@
       <child link="fisheye_frame"/>
   </joint>
 
+  <!--在Gazebo仿真里挂一个鱼眼相机-->
   <gazebo reference="${name}">
     <sensor type="wideanglecamera" name="fisheye_sensor">
       <always_on>true</always_on>
       <visualize>true</visualize>
       <update_rate>30.0</update_rate>
+      <!--设定相机生成图像的参数-->
       <camera name="fisheye">
         <horizontal_fov>3.84</horizontal_fov>
         <image>
@@ -82,11 +88,13 @@
           <env_texture_size>512</env_texture_size>
         </lens>
         <noise>
+          <!--高斯噪声-->
           <type>gaussian</type>
           <mean>0.0</mean>
           <stddev>0.05</stddev>
         </noise>
       </camera>
+        <!--把图像发布到ROS2 topic-->
         <plugin name="camera_plugin_fisheye" filename="libgazebo_ros_camera.so">
           <ros>
             <namespace>camera/fisheye</namespace>
@@ -94,6 +102,11 @@
           </ros>
           
           <camera_name>camera_fish</camera_name>
+          <!--消息的接口类型是sensor_msgs/msg/Image-->
+          <!-- ros2 interface show sensor_msgs/msg/Image 与 sensor_msgs/msg/CameraInfo -->
+          <!--header.id_frame 这条数据所属的坐标系-->
+          <!--header.stamp 这条数据对应的时间-->
+          <!-- ros2 topic info 话题名 -v -->
           <frame_name>fisheye_frame</frame_name>
           
           <hack_baseline>0</hack_baseline>

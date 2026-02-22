@@ -77,6 +77,7 @@ class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
         super().__init__()
         self.layers = nn.ModuleList([])
+        # depth:block=2
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
@@ -104,7 +105,7 @@ class GoT(nn.Module):
 
         self.to_patch_embedding = nn.Sequential(
             Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_height, p2 = patch_width),
-            nn.Linear(patch_dim, dim),
+            nn.Linear(patch_dim, dim),  # dim:32
         )
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
@@ -123,9 +124,11 @@ class GoT(nn.Module):
 
     def forward(self, img, goal):
         x = self.to_patch_embedding(img)
+        # shape(b, num_patches, dim:32)
         b, n, _ = x.shape
 
         cls_tokens = torch.unsqueeze(goal, dim=1)
+        # 目标信息作为第一个token拼接到视觉token的前面
         x = torch.cat((cls_tokens, x), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
         x = self.dropout(x)

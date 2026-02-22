@@ -249,11 +249,11 @@ if __name__ == "__main__":
 
     ##### 人工干预参数 #####
     pre_buffer = config['PRE_BUFFER']          # 是否使用人类专家 buffer
-    human_guidence = config['HUMAN_INTERVENTION'] # 是否需要人类驾驶员指导
+    human_guidance = config['HUMAN_INTERVENTION'] # 是否需要人类驾驶员指导
 
     ##### 熵参数 ######
     auto_tune = config['AUTO_TUNE']            # 是否自动调整熵
-    alpha = config['ALPHA']                    # 熵系数
+    alpha = config['ALPHA']                    # 熵系数(初始值)
     lr_alpha = config['LR_ALPHA']              # 熵学习率
 
     ##### 环境参数 ######
@@ -307,7 +307,7 @@ if __name__ == "__main__":
     state, _ = env.reset()
     state_dim = state.shape
     action_dim = 2
-    physical_state_dim = 2 # 极坐标
+    physical_state_dim = 2 # 极坐标(Dist beta2)
     max_action = 1
     
     # 初始化 SAC 智能体
@@ -322,7 +322,7 @@ if __name__ == "__main__":
             # 仅加载 Attention 部分
             name = "SAC_IL_scout_image_rrc_fisheye_GoT_normalize_Oscar_seed1_64patches_2depth_8heads_2048mlp"
             il_ego = SAC(action_dim, physical_state_dim, policy_type, critic_type, 
-                         policy_attention_fix, critic_attention_fix, human_guidence, 
+                         policy_attention_fix, critic_attention_fix, human_guidance, 
                          seed, lr_c, lr_a, lr_alpha, buffer_size, tau, policy_freq,
                          gamma, alpha, block=transformer_block, head=transformer_head,
                          automatic_entropy_tuning=auto_tune)
@@ -412,13 +412,14 @@ if __name__ == "__main__":
             episode_col_reward = 0.0
             episode_fr_reward = 0.0
             s_list = deque(maxlen=frame_stack)
+            # 随机起点 + 随机目标 + 首帧采样
             s, goal = env.reset()
 
             for i in range(4):
                 s_list.append(s)
 
             state = np.concatenate((s_list[-4], s_list[-3], s_list[-2], s_list[-1]), axis=-1)
-
+            # 每一个episode
             for timestep in range(max_steps):
                 # [ROS 2 修改] 处理 ROS 回调
                 # 这是必要的，以便接收来自 /scout/telekey 的键盘指令
@@ -511,13 +512,17 @@ if __name__ == "__main__":
                     action = ego.choose_action(np.array(state), np.array(goal[:2])).clip(-max_action, max_action)
                     action_exp = None
                     a_in = [(action[0] + 1) * linear_cmd_scale, action[1]*angular_cmd_scale]
-                    # action[0]范围[-1, 1] 
-                    # (action[0] + 1) * linear_cmd_scale范围[0, 1]
+                    # action[0], action[1]范围:[-1, 1] 
+                    # linear_cmd_scale:0.5 angular_cmd_scale:2
+                    # (action[0] + 1) * linear_cmd_scale 范围:[0, 1]
+                    # action[1]*angular_cmd_scale 范围:[-2, 2]
                     pedal_list.append(round((action[0] + 1)/2,2))  # round 保留两位小数 比如50%
                     steering_list.append(round(action[1],2))
 
+                # 执行动作前的目标
                 last_goal = goal
                 # 执行动作
+                # s_ 1帧图像
                 s_, r_h, r_a, r_f, r_c, r_t, reward, done, goal, target = env.step(a_in, timestep)
 
                 # 累加奖励
@@ -527,20 +532,26 @@ if __name__ == "__main__":
                 episode_fr_reward += r_f
                 episode_col_reward += r_c
                 episode_tar_reward += r_t
-
+                
+                # 4帧图像堆叠
+                # shape(128, 160, 4)
                 next_state = np.concatenate((s_list[-3], s_list[-2], s_list[-1], s_), axis=-1)
 
                 # 将转换 (transition) 存入 Replay Buffer
+                # goal[0]:Dist goal[1]:航向误差
                 ego.store_transition(state, action, last_goal[:2], goal[:2], reward, next_state, intervention, action_exp, done)
 
                 # 训练 SAC 模型
-                if human_guidence or pre_buffer:
-                    ego.learn_guidence(intervention, batch_size)
+                if human_guidance or pre_buffer:
+                    # config.yaml 都是false
+                    ego.learn_guidance(human_guidance, batch_size)
                 else:
+                    # 普通SAC学习
                     ego.learn(batch_size)
 
-                # 更新状态
+                # 更新状态 4帧图像堆叠
                 state = next_state
+                # s_ 1帧图像
                 s_list.append(s_)
 
         # 训练结束后进行评估并保存
