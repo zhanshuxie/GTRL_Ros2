@@ -32,7 +32,7 @@ class TeleKey():
     def __init__(self):
         self.twist = Twist()
 
-    def getKey(self):
+    def getKey(self):  # 读取按键字符
         tty.setraw(sys.stdin.fileno())
         # select 是非阻塞的，这很好，允许我们循环并处理 spin_once
         rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
@@ -53,7 +53,7 @@ backup_angular_vel = 0
 
 def cmd_callback(cmd):
     global backup_linear_vel, backup_angular_vel
-    backup_linear_vel = cmd.linear.x
+    backup_linear_vel = cmd.linear.x  # 备份
     backup_angular_vel = cmd.angular.z
 
 if __name__=="__main__":
@@ -85,13 +85,13 @@ if __name__=="__main__":
             rclpy.spin_once(node, timeout_sec=0)
 
             key = telekey.getKey()
-            if key == '1' :
-                target_linear_vel = backup_linear_vel
+            if key == '1' :  # 字符1, 开始接管
+                target_linear_vel = backup_linear_vel  # 把目标速度对齐当前值
                 target_angular_vel = backup_angular_vel
                 telekey.twist.angular.x = 1.0 # 确保是 float
                 flag = True
                 print('Engage!!!')
-            elif key == '2' :
+            elif key == '2' :  # 字符2
                 telekey.twist.angular.x = 0.0
                 flag = False
                 print('DisEngage!!!')

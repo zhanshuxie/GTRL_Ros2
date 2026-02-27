@@ -203,10 +203,10 @@ if __name__ == "__main__":
     device = torch.device("cuda", 0 if torch.cuda.is_available() else "cpu")  # cuda or cpu
 
     path = os.getcwd()
-    yaml_path = os.path.join(path, 'config.yaml')
+    yaml_path = os.path.join(path, 'smoke_test_config.yaml')
     # 兼容性处理：如果找不到 config.yaml，尝试在当前文件目录下查找
     if not os.path.exists(yaml_path):
-        yaml_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+        yaml_path = os.path.join(os.path.dirname(__file__), 'smoke_test_config.yaml')
 
     with open(yaml_path) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -234,12 +234,12 @@ if __name__ == "__main__":
     plot_interval = config['PLOT_INTERVAL']    # 绘图间隔
     
     ##### 评估参数 #####
-    save_interval = config['SAVE_INTERVAL']    # 保存间隔
-    save_threshold = config['SAVE_THRESHOLD']  # 保存阈值
-    reward_threshold = config['REWARD_THRESHOLD'] # 奖励阈值
-    eval_threshold = config['EVAL_THRESHOLD']  # 开始评估的阈值
-    eval_ep = config['EVAL_EPOCH']             # 评估的回合数
-    save_models = config['SAVE']               # 是否保存模型
+    save_interval = config['SAVE_INTERVAL']    # 保存间隔 (训练阶段) 每隔多少个 episode 保存一次奖励曲线
+    save_threshold = config['SAVE_THRESHOLD']  # 保存阈值 (训练结束后的那次评估)  评估平均奖励超过该阈值时，保存模型权重
+    reward_threshold = config['REWARD_THRESHOLD'] # 奖励阈值  当训练中“滑动平均奖励”超过阈值时，触发中途评估
+    eval_threshold = config['EVAL_THRESHOLD']  # 开始评估的阈值  训练至少到多少个 episode 后，才允许触发中途评估(与 reward_threshold 配合)
+    eval_ep = config['EVAL_EPOCH']             # 评估的回合数  每次调用 evaluate() 时评估多少回合
+    save_models = config['SAVE']               # 是否保存模型  是否创建 final_curves / final_models 目录
 
     ##### Attention 相关参数 #####
     pre_train = config['PRE_TRAIN']            # 是否使用预训练参数初始化
@@ -282,7 +282,7 @@ if __name__ == "__main__":
     # [ROS 2 修改] 环境初始化
     # ROS 2 不再使用 master_uri，已移除该参数
     # 重要: 你需要同步修改 Environments/env_lab.py 中的 GazeboEnv __init__ 函数，去掉 master_uri 参数
-    env = GazeboEnv('main.launch', 1, 1, 1)
+    env = GazeboEnv('simulation.launch', 1, 1, 1)
 
     # [ROS 2 修改] 创建订阅者
     # 订阅键盘控制话题，消息类型 Twist，话题名称 /scout/telekey，回调函数 key_callback，队列长度 1 
@@ -449,8 +449,8 @@ if __name__ == "__main__":
                     done = False
 
                     # 记录各种奖励
-                    reward_list.append(episode_reward)
-                    reward_mean_list.append(np.mean(reward_list[-20:]))
+                    reward_list.append(episode_reward)  # 每回合总奖励
+                    reward_mean_list.append(np.mean(reward_list[-20:]))  # 最近 20 回合总奖励均值 （平滑曲线）
                     reward_heuristic_list.append(episode_heu_reward)
                     reward_action_list.append(episode_act_reward)
                     reward_target_list.append(episode_tar_reward)

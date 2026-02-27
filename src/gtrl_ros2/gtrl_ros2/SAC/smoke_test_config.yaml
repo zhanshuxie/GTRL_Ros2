@@ -1,0 +1,58 @@
+##### gtrl Config #####
+---
+##### DRL #####
+SEED : 1
+MAX_STEPS : 100
+MAX_EPISODES : 5
+BATCH_SIZE : 16
+LR_A : 0.001
+LR_C : 0.001
+GAMMA : 0.99
+TAU : 0.005
+ACTOR_FREQ : 1
+BUFFER_SIZE : 5000
+FRAME_STACK : 4
+PLOT_INTERVAL : 1000
+EVAL_THRESHOLD : 999999
+EVAL_EPOCH : 1
+SAVE_INTERVAL : 999999
+SAVE_THRESHOLD : 999999
+REWARD_THRESHOLD : 999999
+SAVE : False
+
+###### Attention #####
+PRE_TRAIN : False
+ATTENTION_ONLY : False
+P_ATTENTION_FIX : False
+C_ATTENTION_FIX : False
+
+###### Human Intervention #####
+PRE_BUFFER : False
+HUMAN_INTERVENTION : False
+
+##### Entropy #####
+AUTO_TUNE : True
+ALPHA : 1.0
+LR_ALPHA : 0.0001
+
+##### Environment #####
+ENV_NAME : "RRC"
+DRIVER : "Oscar"
+ROBOT : "scout"
+L_SCALE : 0.5
+A_SCALE : 2
+
+##### Algo ######
+SAC:
+  name : "drl"
+  actor_type : "GaussianConvNet"
+  critic_type : "CNN"
+  block : 0
+  head : 0
+
+GoT-SAC:
+  name : "gtrl"
+  actor_type : "GaussianTransformer"
+  critic_type : "CNN"
+  block : 1
+  head : 2
