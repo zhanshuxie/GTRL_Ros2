@@ -282,7 +282,7 @@ if __name__ == "__main__":
     # [ROS 2 修改] 环境初始化
     # ROS 2 不再使用 master_uri，已移除该参数
     # 重要: 你需要同步修改 Environments/env_lab.py 中的 GazeboEnv __init__ 函数，去掉 master_uri 参数
-    env = GazeboEnv('simulation.launch', 1, 1, 1)
+    env = GazeboEnv('simulation.launch.py', 1, 1, 1)
 
     # [ROS 2 修改] 创建订阅者
     # 订阅键盘控制话题，消息类型 Twist，话题名称 /scout/telekey，回调函数 key_callback，队列长度 1 

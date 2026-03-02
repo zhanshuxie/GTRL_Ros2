@@ -18,7 +18,6 @@ from collections import deque
 from squaternion import Quaternion
 
 import cv2
-from cv_bridge import CvBridge
 
 # [ROS 2 修改] 引入 rclpy 和相关库
 import rclpy
@@ -96,7 +95,6 @@ class GazeboEnv:
         self.last_image_fish = None
         self.rgb_image = None
         self.original_image = None
-        self.br = CvBridge()
         self.collision = 0
         self.last_act = 0
         
@@ -194,10 +192,18 @@ class GazeboEnv:
         np.random.seed(seed)
     
     # [ROS 2 新增] 同步调用服务的辅助函数
-    def _call_service_sync(self, client, request):
+    def _call_service_sync(self, client, request, timeout_sec=30.0):
         # 判断服务是否上线
+        waited = 0.0
         while not client.wait_for_service(timeout_sec=1.0):
             self.node.get_logger().info('service not available, waiting again...')
+            waited += 1.0
+            if waited >= timeout_sec:
+                service_name = client.srv_name if hasattr(client, 'srv_name') else 'unknown_service'
+                raise TimeoutError(
+                    f"Timeout waiting for service '{service_name}' for {timeout_sec:.1f}s. "
+                    "Please ensure Gazebo is running and gazebo_ros plugins are loaded."
+                )
         # 发送requst
         future = client.call_async(request)
         # spin等待服务处理完成
@@ -240,8 +246,65 @@ class GazeboEnv:
         self.last_odom = od_data
         self.new_odom = True
 
+    def _ros_image_to_numpy(self, msg, desired_encoding="passthrough"):
+        """将 sensor_msgs/Image 转换为 numpy 图像，避免对 cv_bridge 的二进制依赖。"""
+        if msg is None:
+            raise ValueError("Image message is None")
+
+        channels_map = {
+            "mono8": 1,
+            "8UC1": 1,
+            "rgb8": 3,
+            "bgr8": 3,
+            "rgba8": 4,
+            "bgra8": 4,
+        }
+
+        src_encoding = msg.encoding.lower()
+        if src_encoding not in channels_map:
+            raise ValueError(f"Unsupported image encoding: {msg.encoding}")
+
+        channels = channels_map[src_encoding]
+        dtype = np.uint8
+
+        image_np = np.frombuffer(msg.data, dtype=dtype)
+        if channels == 1:
+            image_np = image_np.reshape((msg.height, msg.width))
+        else:
+            image_np = image_np.reshape((msg.height, msg.width, channels))
+
+        # 按请求编码转换
+        if desired_encoding == "passthrough" or desired_encoding.lower() == src_encoding:
+            return image_np.copy()
+
+        if desired_encoding == "mono8":
+            if channels == 1:
+                return image_np.copy()
+            if src_encoding == "rgb8":
+                return cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+            if src_encoding == "bgr8":
+                return cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
+            if src_encoding == "rgba8":
+                return cv2.cvtColor(image_np, cv2.COLOR_RGBA2GRAY)
+            if src_encoding == "bgra8":
+                return cv2.cvtColor(image_np, cv2.COLOR_BGRA2GRAY)
+
+        if desired_encoding == "rgb8":
+            if src_encoding == "rgb8":
+                return image_np.copy()
+            if src_encoding == "bgr8":
+                return cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
+            if src_encoding == "bgra8":
+                return cv2.cvtColor(image_np, cv2.COLOR_BGRA2RGB)
+            if src_encoding == "rgba8":
+                return cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
+
+        raise ValueError(
+            f"Unsupported conversion from {msg.encoding} to {desired_encoding}"
+        )
+
     def image_callback(self, rgb_data):
-        image = self.br.imgmsg_to_cv2(rgb_data, "mono8")
+        image = self._ros_image_to_numpy(rgb_data, "mono8")
         ######## Depth Image ##########
         # image = self.br.imgmsg_to_cv2(rgb_data, "passthrough")
         ######## RGB Image #########
@@ -250,12 +313,12 @@ class GazeboEnv:
 
     def image_fish_callback(self, rgb_data):
         # 灰度
-        image = self.br.imgmsg_to_cv2(rgb_data, "mono8")
+        image = self._ros_image_to_numpy(rgb_data, "mono8")
         # 彩色
-        self.original_image = self.br.imgmsg_to_cv2(rgb_data, "rgb8")
+        self.original_image = self._ros_image_to_numpy(rgb_data, "rgb8")
         # 剪裁/缩放
         self.last_image_fish = np.expand_dims(cv2.resize(image[80:400, 140:500], (160, 128)), axis=2)
-        image_ = self.br.imgmsg_to_cv2(rgb_data, "rgb8")
+        image_ = self._ros_image_to_numpy(rgb_data, "rgb8")
         self.rgb_image = image_[80:400, 140:500, :]
         self.new_image_fish = True
 
@@ -594,7 +657,7 @@ class GazeboEnv:
         ##### FishEye Image ####
         camera_image = data_obs_fish
         # 转灰度图 mono8
-        image = self.br.imgmsg_to_cv2(camera_image, "mono8")
+        image = camera_image
         # 裁剪[80:400, 140:500]
         # resize到(160, 128)
         # 增加channel维
