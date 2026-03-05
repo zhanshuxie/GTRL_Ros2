@@ -444,7 +444,7 @@ if __name__ == "__main__":
                 
                 # 回合结束或达到最大步数
                 if done or timestep == max_steps-1:
-                    ep_real += 1
+                    ep_real += 1  # 不算初始化失败的回合
         
                     done = False
 
