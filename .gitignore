@@ -7,3 +7,12 @@ log
 *.pdf
 
 HELPME.md
+
+# 导入离线模型
+src/gtrl_ros2/models
+
+
+# 忽略__pycache__
+__pycache__/
+*.py[cod]
+*$py.class
