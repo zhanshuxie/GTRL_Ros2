@@ -8,6 +8,25 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
+    # 0.设置系统的环境变量(代替终端的export)
+    # printenv | grep GAZEBO 查看与Gazebo相关的系统环境变量
+
+    # 获取系统的HOME环境变量;如果获取不到使用默认值~
+    home_dir = os.environ.get('HOME', '~')
+    
+    # 设置 GAZEBO_MODEL_DATABASE_URI
+    os.environ['GAZEBO_MODEL_DATABASE_URI'] = ""
+    
+    # 拼接你的自定义模型路径
+    custom_model_paths = f"{home_dir}/.gazebo/models:{home_dir}/workspaces/GTRL_Ros2/src/gtrl_ros2/models"
+    
+    # 将自定义路径加到现有的 GAZEBO_MODEL_PATH 之前
+    if 'GAZEBO_MODEL_PATH' in os.environ:
+        os.environ['GAZEBO_MODEL_PATH'] = f"{custom_model_paths}:{os.environ['GAZEBO_MODEL_PATH']}"
+    else:
+        os.environ['GAZEBO_MODEL_PATH'] = custom_model_paths
+
+
     # 1. 获取包路径
     pkg_gtrl = get_package_share_directory('gtrl_ros2')
     pkg_gazebo_ros = get_package_share_directory('gazebo_ros')
