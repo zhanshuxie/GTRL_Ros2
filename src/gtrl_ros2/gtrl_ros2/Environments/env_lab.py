@@ -34,7 +34,8 @@ from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg import Image, LaserScan, PointCloud2
 
 from gazebo_msgs.msg import EntityState # 服务的request是EntityState类对象
-from gazebo_msgs.srv import SetEntityState  # 通过服务来设置'实体状态'
+from gazebo_msgs.srv import SetEntityState  # 通过服务来设置'实体状态'(无中生有)
+from gazebo_msgs.srv import SpawnEntity  # 通过服务来生成实体(移形换位)
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -169,10 +170,13 @@ class GazeboEnv:
         
         # Services (Clients)
         self.set_state = self.node.create_client(SetEntityState, '/set_entity_state')  # 用于初始化机器人的起点
+        self.spawn_target = self.node.create_client(SpawnEntity, '/spawn_entity')  # 用于生成目标点的可视化模型
+        self.target_spawned = False  # 标志位，确保目标点只生成一次
         self.unpause = self.node.create_client(Empty, '/unpause_physics')
         self.pause = self.node.create_client(Empty, '/pause_physics')
         self.reset_proxy = self.node.create_client(Empty, '/reset_world')
         
+        # RViz 监听vis_mark_array话题，显示MarkerArray
         topic = 'vis_mark_array'
         self.publisher = self.node.create_publisher(MarkerArray, topic, 3)
         topic2 = 'vis_mark_array2'
@@ -652,6 +656,8 @@ class GazeboEnv:
 
         # 生成新目标点
         self.change_goal()
+        self.update_gazebo_target_position()
+
         # self.random_box()
         # 供下一个step奖励计算使用
         self.distOld = math.sqrt(math.pow(self.odomX - self.goalX, 2) + math.pow(self.odomY - self.goalY, 2))
@@ -790,3 +796,71 @@ class GazeboEnv:
             box_state.pose.orientation.z = 0.0
             box_state.pose.orientation.w = 1.0
             self.set_state.publish(box_state)
+
+    def spawn_gazebo_target(self):
+        """在 Gazebo 中生成一个红色方块作为目标点的可视化标记。"""
+        if not self.spawn_target.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().error('Spawn service not available!')
+            return
+        
+        req = SpawnEntity.Request()
+        req.name = 'red_target_box'
+        req.reference_frame = 'world'
+        # 【修改点】：取消静态(static->false)，取消重力(gravity->false)，确保它可以被移动且不会掉落
+        req.xml = """
+        <?xml version="1.0" ?>
+        <sdf version="1.6">
+          <model name="red_target_box">
+            <static>false</static>
+            <link name="link">
+              <gravity>false</gravity>
+              <visual name="visual">
+                <geometry>
+                  <box>
+                    <size>0.6 0.6 0.01</size>
+                  </box>
+                </geometry>
+                <material>
+                  <ambient>1.0 0.0 0.0 1.0</ambient>
+                  <diffuse>1.0 0.0 0.0 1.0</diffuse>
+                </material>
+              </visual>
+            </link>
+          </model>
+        </sdf>
+        """
+
+        # 直接在生成时赋予初始坐标，防止暂停状态下瞬间移动失败
+        req.initial_pose.position.x = float(self.goalX)
+        req.initial_pose.position.y = float(self.goalY)
+        req.initial_pose.position.z = 0.005
+        req.initial_pose.orientation.w = 1.0  # 必须有合法的四元数
+        req.initial_pose.orientation.x = 0.0
+        req.initial_pose.orientation.y = 0.0
+        req.initial_pose.orientation.z = 0.0
+
+        self._call_service_sync(self.spawn_target, req)
+        self.target_spawned = True
+
+
+    def update_gazebo_target_position(self):
+        """更新 Gazebo 中目标点的位置，使其与 self.goalX 和 self.goalY 保持一致。"""
+        if not self.target_spawned:
+            self.spawn_gazebo_target()
+            time.sleep(0.5)  # 等待目标生成
+            return
+
+        req = SetEntityState.Request()
+        req.state.name = 'red_target_box'
+        req.state.pose.position.x = float(self.goalX)
+        req.state.pose.position.y = float(self.goalY)
+        req.state.pose.position.z = 0.005  # 略高于地面防闪烁
+
+        # 2. 必须设置合法的四元数！(w不能为默认的0)
+        req.state.pose.orientation.w = 1.0
+        req.state.pose.orientation.x = 0.0
+        req.state.pose.orientation.y = 0.0
+        req.state.pose.orientation.z = 0.0
+        
+        self._call_service_sync(self.set_state, req)
+        
