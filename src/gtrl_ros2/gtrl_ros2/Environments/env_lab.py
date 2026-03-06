@@ -33,7 +33,9 @@ from visualization_msgs.msg import Marker
 from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg import Image, LaserScan, PointCloud2
 
-from gazebo_msgs.msg import ModelState
+from gazebo_msgs.msg import EntityState # 服务的request是EntityState类对象
+from gazebo_msgs.srv import SetEntityState  # 通过服务来设置'实体状态'
+
 from ament_index_python.packages import get_package_share_directory
 
 # import ros_numpy # [ROS 2 修改] 移除未使用的 ros_numpy
@@ -83,7 +85,7 @@ class GazeboEnv:
         self.odomX = 0
         self.odomY = 0
 
-        self.goalX = 1
+        self.goalX = 1.0
         self.goalY = 0.0
 
         self.upper = 10.0
@@ -107,8 +109,9 @@ class GazeboEnv:
         self.x_pos_list = deque(maxlen=5)
         self.y_pos_list = deque(maxlen=5)
 
-        self.set_self_state = ModelState()
-        self.set_self_state.model_name = 'scout'
+        self.set_self_state = EntityState()
+        self.set_self_state.name = 'scout'
+
         self.set_self_state.pose.position.x = 0.
         self.set_self_state.pose.position.y = 0.
         self.set_self_state.pose.position.z = 0.
@@ -162,12 +165,13 @@ class GazeboEnv:
 
         # [ROS 2 修改] Publishers & Subscribers
         self.vel_pub = self.node.create_publisher(Twist, '/scout/cmd_vel', 1)
-        self.set_state = self.node.create_publisher(ModelState, 'gazebo/set_model_state', 10)
+
         
         # Services (Clients)
-        self.unpause = self.node.create_client(Empty, '/gazebo/unpause_physics')
-        self.pause = self.node.create_client(Empty, '/gazebo/pause_physics')
-        self.reset_proxy = self.node.create_client(Empty, '/gazebo/reset_world')
+        self.set_state = self.node.create_client(SetEntityState, '/set_entity_state')  # 用于初始化机器人的起点
+        self.unpause = self.node.create_client(Empty, '/unpause_physics')
+        self.pause = self.node.create_client(Empty, '/pause_physics')
+        self.reset_proxy = self.node.create_client(Empty, '/reset_world')
         
         topic = 'vis_mark_array'
         self.publisher = self.node.create_publisher(MarkerArray, topic, 3)
@@ -178,10 +182,12 @@ class GazeboEnv:
         topic4 = 'vis_mark_array4'
         self.publisher4 = self.node.create_publisher(MarkerArray, topic4, 1)
         
+        # 
         self.velodyne = self.node.create_subscription(PointCloud2, '/velodyne_points', self.velodyne_callback, 1)
+        # 2D 激光雷达
         self.laser = self.node.create_subscription(LaserScan, '/front_laser/scan', self.laser_callback, 1)
         # self.odom进行了修改
-        self.odom = self.node.create_subscription(Odometry, '/odom', self.odom_callback, 1)
+        self.odom = self.node.create_subscription(Odometry, '/scout/odom', self.odom_callback, 1)
         # self.image是否需要修改???
         self.image = self.node.create_subscription(Image, '/camera/rgb/image_raw', self.image_callback, 1)
         # self.image_fish进行修改
@@ -324,7 +330,7 @@ class GazeboEnv:
 
     # Detect a collision from laser data
     def calculate_observation(self, data):
-        min_range = 0.5
+        min_range = 0.4
         min_laser = 2
         done = False
         col = False
@@ -332,9 +338,31 @@ class GazeboEnv:
         for i, item in enumerate(data.ranges):
             if min_laser > data.ranges[i]:
                 min_laser = data.ranges[i]
-            if (min_range > data.ranges[i] > 0):
+            if (min_range > data.ranges[i] > 0.20):
                 done = True
                 col = True
+                print(f'发生碰撞!!!距离:{data.ranges[i]}')
+
+        # min_range = 0.4 
+        # min_laser = 2
+        # done = False
+        # col = False
+
+        # total_rays = len(data.ranges)
+        # # 【修改2】只取正前方的扫描扇区（比如掐头去尾，只看中间 60% 的射线），防止扫到自己车身两侧的轮子
+        # start_idx = int(total_rays * 0.2)
+        # end_idx = int(total_rays * 0.8)
+
+        # # 遍历时只看安全角度内的射线
+        # for i in range(start_idx, end_idx):
+        #     if min_laser > data.ranges[i]:
+        #         min_laser = data.ranges[i]
+        #     # 过滤掉 0.0 的无效点，如果有效点小于 0.16 米才算碰撞
+        #     if (min_range > data.ranges[i] > 0.20):
+        #         done = True
+        #         col = True
+        #         print(f'发生碰撞!!!距离:{data.ranges[i]}')
+        
         return done, col, min_laser
 
     # Perform an action and read a new state
@@ -393,7 +421,7 @@ class GazeboEnv:
         v_state[:] = self.velodyne_data[:]
         laser_state = [v_state]
 
-        done, col, min_laser = self.calculate_observation(data)
+        done, col, min_laser = self.calculate_observation(data)  # data是雷达数据
 
         # Calculate robot heading from odometry data
         # 更新机器人位姿odomX/odomY
@@ -459,7 +487,7 @@ class GazeboEnv:
         marker.pose.orientation.w = 1.0
         marker.pose.position.x = self.goalX  # 位置X
         marker.pose.position.y = self.goalY  # 位置Y
-        marker.pose.position.z = 0
+        marker.pose.position.z = 0.0
 
         markerArray.markers.append(marker)
 
@@ -471,7 +499,7 @@ class GazeboEnv:
         marker2.header.frame_id = "odom"
         marker2.type = marker.CUBE
         marker2.action = marker.ADD
-        marker2.scale.x = abs(act[0])
+        marker2.scale.x = float(abs(act[0]))
         marker2.scale.y = 0.1
         marker2.scale.z = 0.01
         marker2.color.a = 1.0
@@ -479,9 +507,9 @@ class GazeboEnv:
         marker2.color.g = 0.0
         marker2.color.b = 0.0
         marker2.pose.orientation.w = 1.0
-        marker2.pose.position.x = 5
-        marker2.pose.position.y = 0
-        marker2.pose.position.z = 0
+        marker2.pose.position.x = 5.0
+        marker2.pose.position.y = 0.0
+        marker2.pose.position.z = 0.0
 
         markerArray2.markers.append(marker2)
         self.publisher2.publish(markerArray2)
@@ -492,7 +520,7 @@ class GazeboEnv:
         marker3.header.frame_id = "odom"
         marker3.type = marker.CUBE
         marker3.action = marker.ADD
-        marker3.scale.x = abs(act[1])
+        marker3.scale.x = float(abs(act[1]))
         marker3.scale.y = 0.1
         marker3.scale.z = 0.01
         marker3.color.a = 1.0
@@ -500,9 +528,9 @@ class GazeboEnv:
         marker3.color.g = 0.0
         marker3.color.b = 0.0
         marker3.pose.orientation.w = 1.0
-        marker3.pose.position.x = 5
+        marker3.pose.position.x = 5.0
         marker3.pose.position.y = 0.2
-        marker3.pose.position.z = 0
+        marker3.pose.position.z = 0.0
 
         markerArray3.markers.append(marker3)
         self.publisher3.publish(markerArray3)
@@ -521,9 +549,9 @@ class GazeboEnv:
         marker4.color.g = 0.0
         marker4.color.b = 0.0
         marker4.pose.orientation.w = 1.0
-        marker4.pose.position.x = 5
+        marker4.pose.position.x = 5.0
         marker4.pose.position.y = 0.4
-        marker4.pose.position.z = 0
+        marker4.pose.position.z = 0.0
 
         markerArray4.markers.append(marker4)
         self.publisher4.publish(markerArray4)
@@ -595,6 +623,7 @@ class GazeboEnv:
         angle = np.random.uniform(-np.pi, np.pi)
         # 再转成四元数
         quaternion = Quaternion.from_euler(0., 0., angle)
+        # object_state 是 EntityState类对象
         object_state = self.set_self_state
 
         # 随机位置
@@ -606,14 +635,17 @@ class GazeboEnv:
             y = np.random.uniform(-4.0, 4.0)
             # 判断是否可行
             chk = check_pos(x, y)
-        object_state.pose.position.x = x
-        object_state.pose.position.y = y
-        object_state.pose.orientation.x = quaternion.x
-        object_state.pose.orientation.y = quaternion.y
-        object_state.pose.orientation.z = quaternion.z
-        object_state.pose.orientation.w = quaternion.w
-        # 通过 gazebo/set_model_state 发布
-        self.set_state.publish(object_state)
+        object_state.pose.position.x = float(x)
+        object_state.pose.position.y = float(y)
+        object_state.pose.orientation.x = float(quaternion.x)
+        object_state.pose.orientation.y = float(quaternion.y)
+        object_state.pose.orientation.z = float(quaternion.z)
+        object_state.pose.orientation.w = float(quaternion.w)
+        
+        # 通过 /set_entity_state 发布服务
+        req = SetEntityState.Request()
+        req.state = object_state
+        self._call_service_sync(self.set_state, req)
 
         self.odomX = object_state.pose.position.x
         self.odomY = object_state.pose.position.y
@@ -748,8 +780,8 @@ class GazeboEnv:
                 d2 = math.sqrt((x - self.goalX) ** 2 + (y - self.goalY) ** 2)
                 if d1 < 1.5 or d2 < 1.5:
                     chk = False
-            box_state = ModelState()
-            box_state.model_name = name
+            box_state = EntityState()
+            box_state.name = name
             box_state.pose.position.x = x
             box_state.pose.position.y = y
             box_state.pose.position.z = 0.
