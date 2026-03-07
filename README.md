@@ -51,7 +51,31 @@ ros2 launch gtrl_ros2 simulation.launch.py
 ```
 
 ### Time to train!
+
+:warning: you should make sure to launch the simulation environment first.
+
+option1: run the SAC training script directly. 
 ```bash
 cd ~/$your workspace/GTRL_Ros2/src/gtrl_ros2/gtrl_ros2/SAC
 python3 main.py
+```
+
+option2: run the ROS node that contains the SAC training script. 
+```bash
+ros2 run gtrl_ros2 train_node
+```
+
+### Evaluate the trained model.
+
+:warning: you should make sure to launch the simulation environment first.
+
+option1: run the evaluation script directly. 
+```bash
+cd ~/$your workspace/GTRL_Ros2/src/gtrl_ros2/gtrl_ros2/SAC
+python3 run_eval.py
+```
+
+option2: run the ROS node that contains the evaluation script. 
+```bash
+ros2 run gtrl_ros2 eval_node
 ```

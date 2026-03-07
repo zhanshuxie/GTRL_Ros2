@@ -52,6 +52,7 @@ setup(
     entry_points={
         'console_scripts': [
             'train_node = gtrl_ros2.SAC.main:main',
+            'eval_node = gtrl_ros2.SAC.run_eval:main',
             'teleop_node = gtrl_ros2.DIL.keyboard_control:main',
         ],
     },
