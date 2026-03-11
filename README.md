@@ -79,3 +79,23 @@ option2: run the ROS node that contains the evaluation script.
 ```bash
 ros2 run gtrl_ros2 eval_node
 ```
+
+### Collect demonstration data.
+
+:warning: you should make sure to launch the simulation environment first.
+source the workspace.
+```bash
+cd ~/$your workspace/GTRL_Ros2
+source install/setup.bash
+```
+preprare to teleop the robot with keyboard control.
+```bash
+cd ~/$your workspace/GTRL_Ros2/src/gtrl_ros2/gtrl_ros2/DIL
+python3 keyboard_control.py
+```
+
+then run the demonstration collection script.
+```bash
+cd ~/$your workspace/GTRL_Ros2/src/gtrl_ros2/gtrl_ros2/DIL
+python3 demonstration.py
+```

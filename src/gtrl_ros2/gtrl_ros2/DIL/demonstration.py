@@ -91,11 +91,14 @@ def plot_animation_figure(ep):
     plt.pause(0.001)  # pause a bit so that plots are updated
 
 # 全局变量
-key_cmd = Twist()
+key_cmd = Twist()  # 存储人类最新的键盘控制速度指令
 engage = 0
 
+# 订阅/scout/telekey
 def key_callback(cmd):
     global key_cmd
+    # 收到/scout/telekey的Twist消息后，更新全局变量 key_cmd
+    # print("Received telekey cmd: linear.x = {}, angular.z = {}".format(cmd.linear.x, cmd.angular.z))
     key_cmd.linear.x = cmd.linear.x
     key_cmd.angular.z = cmd.angular.z
 
@@ -103,36 +106,37 @@ if __name__ == "__main__":
 
     # Set the parameters for the implementation
     device = torch.device("cuda", 0 if torch.cuda.is_available() else "cpu")  # cuda or cpu
-    env_name = "RRC"
-    driver = "Oscar_GoT_augmentend"
+    env_name = "RRC1"
+    driver = "Xzs_GoT_augmentend"
     robot = 'scout'
-    seed = 0 # Random seed number
+    seed = 1 # Random seed number
     max_steps = 300
-    max_episodes = int(200)  # Maximum number of steps to perform
+    max_episodes = int(10)  # Maximum number of steps to perform
     save_models = True  # Weather to save the model or not
     batch_size = 32  # Size of the mini-batch
     frame_stack = 4
     file_name = "SAC_scout_image_rrc_fisheye_smooth_nofreeze_oneshot_transformer"  # name of the file to store the policy
-    plot_interval = int(1)
+    plot_interval = int(10)
 
     # Create the network storage folders
-    if not os.path.exists("./results"):
-        os.makedirs("./results")
-    if save_models and not os.path.exists("./pytorch_models"):
-        os.makedirs("./pytorch_models")
+    # if not os.path.exists("./results"):
+    #     os.makedirs("./results")
+    # if save_models and not os.path.exists("./pytorch_models"):
+    #     os.makedirs("./pytorch_models")
+
+    # 保存在./Data/RRC1/Xzs_GoT_augmentend/ 目录下
     if not os.path.exists("./Data/" + str(env_name) + '/' + str(driver)):
         os.makedirs("./Data/" + str(env_name) + '/' + str(driver))
 
     # [ROS 2 修改] 初始化
     rclpy.init()
-    node = rclpy.create_node('demonstration_recorder_node')
 
     # [ROS 2 修改] Environment Initialization
     # 移除 master_uri 参数
-    env = GazeboEnv('main.launch', 1, 1, 1)
+    env = GazeboEnv('simulation.launch.py', 1, 1, 1)
     
     # [ROS 2 修改] Subscriber
-    cmd_sub = node.create_subscription(Twist, '/scout/telekey', key_callback, 1)
+    cmd_sub = env.node.create_subscription(Twist, '/scout/telekey', key_callback, 10)
     
     time.sleep(2) # 等待连接
 
@@ -154,7 +158,7 @@ if __name__ == "__main__":
     # Create evaluation data store
     evaluations = []
     
-    ep_real = 200
+    ep_real = 210
     done = False
     reward_list = []
     reward_heuristic_list = []
@@ -189,13 +193,14 @@ if __name__ == "__main__":
             state = np.concatenate((s_list[-4], s_list[-3], s_list[-2], s_list[-1]), axis=-1)
 
             ######## Demonstration List #########
+            # 输入: 视觉状态 + goal (极坐标) -> 输出: 人类控制的线速度和角速度
             obs_list = []
             act_list = []
             goal_list= []
 
             for timestep in range(max_steps):
                 # [ROS 2 修改] 处理回调
-                rclpy.spin_once(node, timeout_sec=0)
+                rclpy.spin_once(env.node, timeout_sec=0.1)
 
                 # On termination of episode
                 if timestep < 3:
@@ -214,11 +219,11 @@ if __name__ == "__main__":
                     continue
                 
                 if done or timestep == max_steps-1:
-                    ep_real += 1
+                    ep_real += 1  # 只有在 episode 真的结束时才增加 ep_real，这样保存的数据才不会有重复的 ep_real
         
                     done = False
                     
-                    np.savez('Data/{}/{}/demo_{}_{}.npz'.format(env_name, driver, robot, ep_real),
+                    np.savez('Data/{}/{}/demo_{}_{}.npz'.format(env_name, driver, robot, ep_real),  # 保存格式为 Data/RRC1/Xzs_GoT_augmentend/demo_scout_201.npz
                             obs=np.array(obs_list, dtype=np.float32), 
                             act=np.array(act_list, dtype=np.float32),
                             goal=np.array(goal_list, dtype=np.float32))
@@ -253,9 +258,11 @@ if __name__ == "__main__":
 
                     break
 
+                # 记录在数据集中使用的动作
                 action = [key_cmd.linear.x, key_cmd.angular.z]
                 # 假设这里是从键盘控制映射到环境动作
-                a_in = [(action[0] + 1) * 0.5, action[1]*np.pi*2]
+                # 这个动作与环境交互
+                a_in = [(action[0] + 1) * 0.5, action[1]*2]
                 last_goal = goal
                 s_, r_h, r_a, r_f, r_c, r_t, reward, done, goal, target = env.step(a_in, timestep)
 
@@ -278,5 +285,8 @@ if __name__ == "__main__":
                 state = next_state
                 s_list.append(s_)
     finally:
-        # [ROS 2 修改] 关闭
-        rclpy.shutdown()
+        try:
+            # [ROS 2 修改] 关闭
+            rclpy.shutdown()
+        except Exception as e:
+            pass

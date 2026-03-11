@@ -20,3 +20,6 @@ __pycache__/
 # 忽略SAC训练过程中保存的奖励数据文件
 src/gtrl_ros2/gtrl_ros2/SAC/final_curves/
 src/gtrl_ros2/gtrl_ros2/SAC/final_models/
+
+# 专家演示数据
+src/gtrl_ros2/gtrl_ros2/DIL/Data/

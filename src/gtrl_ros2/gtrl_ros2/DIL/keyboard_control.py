@@ -51,9 +51,11 @@ class TeleKey():
 backup_linear_vel = 0
 backup_angular_vel = 0
 
+# 订阅 /scout/cmd_vel 以获取备份速度
 def cmd_callback(cmd):
     global backup_linear_vel, backup_angular_vel
-    backup_linear_vel = cmd.linear.x  # 备份
+    backup_linear_vel = cmd.linear.x  # 备份scout在Gazebo中的实际线速度
+    # print("Updated linear_vel in gazebo: {}".format(backup_linear_vel))
     backup_angular_vel = cmd.angular.z
 
 if __name__=="__main__":
@@ -82,12 +84,15 @@ if __name__=="__main__":
         print (msg)
         while(1):
             # [ROS 2 修改] 必须调用 spin_once 才能触发 cmd_callback 更新 backup_vel
-            rclpy.spin_once(node, timeout_sec=0)
+            rclpy.spin_once(node, timeout_sec=0.1)
 
             key = telekey.getKey()
+            # 若未接管，且 Gazebo 中的线速度为0，则保持线速度为-1.0（Gazebo中静止时的线速度），否则保持当前线速度
+            if flag == False:
+                target_linear_vel= -1.0  
             if key == '1' :  # 字符1, 开始接管
-                target_linear_vel = backup_linear_vel  # 把目标速度对齐当前值
-                target_angular_vel = backup_angular_vel
+                target_linear_vel = backup_linear_vel * 2 - 1.0 # 把目标速度对齐当前值,并且把线速度映射到[-1, 1]
+                target_angular_vel = backup_angular_vel / 2
                 telekey.twist.angular.x = 1.0 # 确保是 float
                 flag = True
                 print('Engage!!!')
@@ -100,34 +105,41 @@ if __name__=="__main__":
 
             if flag:
                 if key == 'w' :
-                    if (target_linear_vel + 0.05)*target_linear_vel < 0:
+                    # 增加线速度0.05
+                    # 先判断增加后是否过零，如果过零则直接置零，否则增加0.05
+                    if (target_linear_vel + 0.40)*target_linear_vel < 0:
                         target_linear_vel = 0.0
                     else:
-                        target_linear_vel = target_linear_vel + 0.05
-                    print (telekey.vels(0.5*(target_linear_vel+1),target_angular_vel))
-                elif key == 's' :
-                    if (target_linear_vel - 0.05)*target_linear_vel < 0:
-                        target_linear_vel = 0.0
-                    else:
-                        target_linear_vel = target_linear_vel - 0.05
-                    print (telekey.vels(0.5*(target_linear_vel+1),target_angular_vel))
-                elif key == 'a' :
-                    if (target_angular_vel + 0.1)*target_angular_vel < 0:
-                        target_angular_vel = 0.0
-                    else:
-                        target_angular_vel = target_angular_vel + 0.1
-                    print (telekey.vels(0.5*(target_linear_vel),target_angular_vel))
-                elif key == 'd' :
-                    if (target_angular_vel - 0.1)*target_angular_vel < 0:
-                        target_angular_vel = 0.0
-                    else:
-                        target_angular_vel = target_angular_vel - 0.1
-                    print (telekey.vels(0.5*(target_linear_vel+1),target_angular_vel))
+                        target_linear_vel = target_linear_vel + 0.40
+                    print (telekey.vels(0.5*(target_linear_vel+1),target_angular_vel * 2))
                 elif key == 'x' :
+                    # 减少线速度0.05
+                    if (target_linear_vel - 0.40)*target_linear_vel < 0:
+                        target_linear_vel = 0.0
+                    else:
+                        target_linear_vel = target_linear_vel - 0.40
+                    print (telekey.vels(0.5*(target_linear_vel+1),target_angular_vel * 2))
+                elif key == 'a' :
+                    # 增加角速度0.1
+                    if (target_angular_vel + 0.40)*target_angular_vel < 0:
+                        target_angular_vel = 0.0
+                    else:
+                        target_angular_vel = target_angular_vel + 0.40
+                    print (telekey.vels(0.5*(target_linear_vel),target_angular_vel * 2))
+                elif key == 'd' :
+                    # 减少角速度0.1
+                    if (target_angular_vel - 0.40)*target_angular_vel < 0:
+                        target_angular_vel = 0.0
+                    else:
+                        target_angular_vel = target_angular_vel - 0.40
+                    print (telekey.vels(0.5*(target_linear_vel+1),target_angular_vel * 2))
+                elif key == 's' :
+                    # 紧急停止，实际线速度0.5,角速度置零
                     target_linear_vel   = 0.0
                     target_angular_vel  = 0.0
                     print (telekey.vels(0.5, 0))
                 elif key == 'q' :
+                    # 角速度置零
                     target_angular_vel = 0.0
                     print (telekey.vels(0.5*(target_linear_vel+1), 0))
                 elif key == ' ' :
@@ -135,6 +147,7 @@ if __name__=="__main__":
                     target_angular_vel  = 0.0
                     print (telekey.vels(0, 0))
 
+            # 线速度和角速度限制[-1, 1]
             if target_linear_vel >= 0:
                 target_linear_vel = min(target_linear_vel, linear_vel_limit)
             else:
