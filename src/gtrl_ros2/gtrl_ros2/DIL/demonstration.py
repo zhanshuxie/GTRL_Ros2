@@ -109,14 +109,14 @@ if __name__ == "__main__":
     env_name = "RRC1"
     driver = "Xzs_GoT_augmentend"
     robot = 'scout'
-    seed = 1 # Random seed number
+    seed = 5 # Random seed number
     max_steps = 300
-    max_episodes = int(10)  # Maximum number of steps to perform
+    max_episodes = int(50)  # Maximum number of steps to perform
     save_models = True  # Weather to save the model or not
     batch_size = 32  # Size of the mini-batch
     frame_stack = 4
     file_name = "SAC_scout_image_rrc_fisheye_smooth_nofreeze_oneshot_transformer"  # name of the file to store the policy
-    plot_interval = int(10)
+    plot_interval = int(50)
 
     # Create the network storage folders
     # if not os.path.exists("./results"):
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     # Create evaluation data store
     evaluations = []
     
-    ep_real = 210
+    ep_real = 250
     done = False
     reward_list = []
     reward_heuristic_list = []
@@ -197,6 +197,10 @@ if __name__ == "__main__":
             obs_list = []
             act_list = []
             goal_list= []
+            reward_buf = []
+            next_obs_list = []
+            next_goal_list = []
+            done_list = []
 
             for timestep in range(max_steps):
                 # [ROS 2 修改] 处理回调
@@ -226,7 +230,11 @@ if __name__ == "__main__":
                     np.savez('Data/{}/{}/demo_{}_{}.npz'.format(env_name, driver, robot, ep_real),  # 保存格式为 Data/RRC1/Xzs_GoT_augmentend/demo_scout_201.npz
                             obs=np.array(obs_list, dtype=np.float32), 
                             act=np.array(act_list, dtype=np.float32),
-                            goal=np.array(goal_list, dtype=np.float32))
+                            goal=np.array(goal_list, dtype=np.float32),
+                            reward=np.array(reward_buf, dtype=np.float32),
+                            next_obs=np.array(next_obs_list, dtype=np.float32),
+                            next_goal=np.array(next_goal_list, dtype=np.float32),
+                            done=np.array(done_list, dtype=np.float32))
 
                     reward_list.append(episode_reward)
                     reward_mean_list.append(np.mean(reward_list[-20:]))
@@ -263,7 +271,7 @@ if __name__ == "__main__":
                 # 假设这里是从键盘控制映射到环境动作
                 # 这个动作与环境交互
                 a_in = [(action[0] + 1) * 0.5, action[1]*2]
-                last_goal = goal
+                last_goal = goal.copy()
                 s_, r_h, r_a, r_f, r_c, r_t, reward, done, goal, target = env.step(a_in, timestep)
 
                 episode_reward += reward
@@ -279,7 +287,11 @@ if __name__ == "__main__":
 
                 obs_list.append(state)
                 act_list.append(action)
-                goal_list.append(goal)
+                goal_list.append(last_goal)
+                reward_buf.append(reward)
+                next_obs_list.append(next_state)
+                next_goal_list.append(goal)
+                done_list.append(done)
 
                 # Update the counters
                 state = next_state

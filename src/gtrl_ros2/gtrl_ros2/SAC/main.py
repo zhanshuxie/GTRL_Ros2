@@ -203,10 +203,10 @@ if __name__ == "__main__":
     device = torch.device("cuda", 0 if torch.cuda.is_available() else "cpu")  # cuda or cpu
 
     path = os.getcwd()
-    yaml_path = os.path.join(path, 'smoke_test_config.yaml')
+    yaml_path = os.path.join(path, 'config.yaml')
     # 兼容性处理：如果找不到 config.yaml，尝试在当前文件目录下查找
     if not os.path.exists(yaml_path):
-        yaml_path = os.path.join(os.path.dirname(__file__), 'smoke_test_config.yaml')
+        yaml_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
 
     with open(yaml_path) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -265,8 +265,8 @@ if __name__ == "__main__":
     angular_cmd_scale = config['A_SCALE']      # 角速度缩放
 
     # 创建结果存储文件夹
-    if not os.path.exists("./results"):
-        os.makedirs("./results")
+    # if not os.path.exists("./results"):
+    #     os.makedirs("./results")
     folder_name = "./final_curves"
     if save_models and not os.path.exists(folder_name):
         os.makedirs(folder_name)
@@ -339,9 +339,9 @@ if __name__ == "__main__":
 
     ###### 预初始化专家 Replay Buffer (可选) #######
     if pre_buffer:
-        data_dir = '/home/oscar/ws_oscar/DRL-Transformer-SimtoReal-Navigation/catkin_ws/src/gtrl/scripts'
+        data_dir = '/home/xzs/Desktop/Goal-Guided-Ros2_ws/src/gtrl_ros2/gtrl_ros2'
         # 使用 glob 查找数据文件
-        files = natsorted(glob.glob(os.path.join(data_dir) + '/IL/Data/' + env_name + '/' + driver + '/*.npz'))
+        files = natsorted(glob.glob(os.path.join(data_dir) + '/DIL/Data/' + env_name + '/' + driver + '/*.npz'))
         obs_list = []
         act_list = []
         goal_list = []
@@ -488,6 +488,11 @@ if __name__ == "__main__":
                           '\n')
 
                     # 保存奖励曲线数据
+                    '''
+                    cd ~/Desktop/Goal-Guided-Ros2_ws/src/gtrl_ros2/gtrl_ros2/SAC
+                    python3 final_curves/plot_final_curve.py
+                    '''
+
                     if (ep_real % save_interval == 0):
                         np.save(os.path.join('final_curves', 'reward_seed' + str(seed) + '_' + model_name),
                                 reward_mean_list, allow_pickle=True, fix_imports=True)
